@@ -189,6 +189,7 @@ export function setListener(firebase, dispatch, queryOpts, successCb, errorCb) {
 
   // Create listener
   const unsubscribe = firestoreRef(firebase, meta).onSnapshot(
+    { includeMetadataChanges: queryOpts.includeMetadataChanges || false },
     docData => {
       // Dispatch directly if no populates
       if (!meta.populates) {
