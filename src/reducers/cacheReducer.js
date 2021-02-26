@@ -15,6 +15,7 @@ import {
   zip,
   setWith,
   assign,
+  extend,
 } from 'lodash';
 import { actionTypes } from '../constants';
 import { getBaseQueryName } from '../utils/query';
@@ -26,7 +27,7 @@ import { getBaseQueryName } from '../utils/query';
  * drag & drop UI that requires a transaction offer a terrible user experience.
  * @property {object.<FirestorePath, object<FirestoreDocumentId, Doc>>}  database
  * Store in-memory documents returned from firestore, with no modifiactions.
- * @property {object.<FirestorePath, object<FirestoreDocumentId, ParitalDoc>>}  overrides
+ * @property {object.<FirestorePath, object<FirestoreDocumentId, ParitalDoc>>}  databaseOverrides
  * Store document fragments that are in-flight to be persisted to firestore.
  */
 
@@ -63,8 +64,7 @@ const PROCESSES = {
   '==': (a, b) => a === b,
   '!=': (a, b) => a !== b,
   '>=': (a, b) => a >= b,
-  '>': (a, b) => a >= b,
-  '<=': (a, b) => a >= b,
+  '>': (a, b) => a > b,
   'array-contains': (a, b) => a.includes(b),
   in: (a, b) => a.includes(b),
   'array-contains-any': (a, b) => a.includes(b),
@@ -119,13 +119,13 @@ const limitTransducer = (limit) => partialRight(take, limit);
 const filterTransducers = (where) => {
   const isFlat = typeof where[0] === 'string';
   const clauses = isFlat ? [where] : where;
-  const fnc = PROCESSES[op] || (() => true);
 
-  return clauses.map(([field, op, val]) =>
-    partialRight(map, (collection) =>
+  return clauses.map(([field, op, val]) => {
+    const fnc = PROCESSES[op] || (() => true);
+    return partialRight(map, (collection) =>
       filter(Object.values(collection), (doc) => fnc(doc[field], val)),
-    ),
-  );
+    );
+  });
 };
 /**
  * @param collection
@@ -135,7 +135,6 @@ const filterTransducers = (where) => {
  */
 const populateTransducer = (collection, populates) =>
   partialRight(map, (state) => {
-    // NOTE: this is costly for the entire collection, done at the end is better
     const parent = JSON.parse(JSON.stringify(state.database[collection]));
     populates.forEach(([id, siblingCollection, field]) => {
       const sibling = state.database[siblingCollection];
@@ -156,13 +155,17 @@ const populateTransducer = (collection, populates) =>
  * @typedef {Function} xFormOverrides - takes synchronous, in-memory change
  * requests and applies them to the in-memory database
  */
-const overridesTransducers = (overrides, collection) => {
-  const overrideDocs = overrides[collection];
-  return Object.keys(overrideDocs).map((docId) =>
+const overridesTransducers = (overrides, path) => {
+  const partials = (overrides && overrides[path]) || {};
+  return Object.keys(partials).map((docId) =>
     partialRight(map, (collection) =>
-      overrideDocs[docId] === null
+      partials[docId] === null
         ? unset(collection, docId)
-        : assign(collection, { [docId]: overrideDocs[docId] }),
+        : set(
+            collection,
+            [docId],
+            extend({}, collection[docId], partials[docId]),
+          ),
     ),
   );
 };
@@ -171,13 +174,13 @@ const overridesTransducers = (overrides, collection) => {
  * @typedef {Function} Function prints data and returns for the next xForm
  */
 const xfSpy = partialRight(map, (data) => {
-  console.log('>>>', data);
+  console.log(data);
   return data;
 });
 
 /**
  * Convert the query to a transducer for the query results
- * @param {?CacheState.overrides} overrides -
+ * @param {?CacheState.databaseOverrides} overrides -
  * @param {RRFQuery} query - query used to get data from firestore
  * @returns {Function} Function that results query results + overrides
  */
@@ -192,31 +195,34 @@ function buildTransducer(overrides, query) {
     populates,
   } = query;
 
-  const skipOverrides = JSON.stringify(overrides || {}) === '{}';
+  const useOverrides = JSON.stringify(overrides || {}) !== '{}';
 
-  const xfGetCollection = getCollectionTransducer(collection);
   const xfPopulate = !populates
     ? null
     : populateTransducer(collection, populates);
-  const xfFields = !fields ? null : fieldsTransducer(fields);
+  const xfGetCollection = getCollectionTransducer(collection);
   const xfGetDoc = getDocumentTransducer(ordered.map(([__, id]) => id));
-  const xfApplyOverrides = skipOverrides
+  const xfFields = !fields ? null : fieldsTransducer(fields);
+
+  const xfApplyOverrides = !useOverrides
     ? null
     : overridesTransducers(overrides, collection);
-  const xfFilter = !where ? null : filterTransducers(where);
-  const xfOrder = !order ? null : orderTransducer(order);
-  const xfLimit = limit ? null : limitTransducer(limit);
+  const xfFilter = !useOverrides || !where ? [null] : filterTransducers(where);
+  const xfOrder = !useOverrides || !order ? null : orderTransducer(order);
+  const xfLimit = !useOverrides || limit ? null : limitTransducer(limit);
+
+  if (!useOverrides) {
+    return flow(compact([xfPopulate, xfGetCollection, xfGetDoc, xfFields]));
+  }
 
   return flow(
     compact([
       xfPopulate,
       xfGetCollection,
-      ...(skipOverrides ? [xfGetDoc] : xfApplyOverrides),
-      xfSpy,
+      ...xfApplyOverrides,
       ...xfFilter,
       xfOrder,
       xfLimit,
-      xfSpy,
       xfFields,
     ]),
   );
@@ -229,7 +235,7 @@ function buildTransducer(overrides, query) {
  * @returns {object} updated reducerState
  */
 function selectDocuments(reducerState, meta) {
-  const transduce = buildTransducer(reducerState.overrides, meta);
+  const transduce = buildTransducer(reducerState.databaseOverrides, meta);
   return transduce([reducerState])[0];
 }
 
@@ -273,20 +279,28 @@ export default function cacheReducer(state = {}, action) {
       case actionTypes.GET_SUCCESS:
       case actionTypes.LISTENER_RESPONSE:
         if (!draft.database) {
-          draft.database = {};
+          set(draft, ['database'], {});
+          set(draft, ['databaseOverrides'], {});
         }
 
-        // eslint-disable-line no-param-reassign
-        draft.database[path] = merge(
-          draft.database[path] || {},
-          action.payload.data,
-        );
+        if (action.payload.data) {
+          Object.keys(action.payload.data).forEach((id) => {
+            setWith(
+              draft,
+              ['database', path, id],
+              action.payload.data[id],
+              Object,
+            );
+          });
+        }
 
-        draft[key] = {
-          ordered: action.payload.ordered.map(({ id, path }) => [path, id]),
+        // set the query
+        set(draft, [key], {
+          ordered: action.payload.ordered.map(({ path, id }) => [path, id]),
           ...action.meta,
-        };
+        });
 
+        // append docs field to query
         updateCollectionQueries(draft, path);
 
         return draft;
@@ -311,11 +325,11 @@ export default function cacheReducer(state = {}, action) {
         );
 
         const shouldRemvoveOverride =
-          draft.overrides &&
-          draft.overrides[path] &&
-          draft.overrides[path][action.meta.doc];
+          draft.databaseOverrides &&
+          draft.databaseOverrides[path] &&
+          draft.databaseOverrides[path][action.meta.doc];
         if (shouldRemvoveOverride) {
-          unset(draft, ['overrides', path, action.meta.doc]);
+          unset(draft, ['databaseOverrides', path, action.meta.doc]);
         }
 
         const { oldIndex = 0, newIndex = 0 } = action.payload.ordered || {};
@@ -333,8 +347,8 @@ export default function cacheReducer(state = {}, action) {
       case actionTypes.DOCUMENT_REMOVED:
       case actionTypes.DELETE_SUCCESS:
         unset(draft, ['database', path, action.meta.doc]);
-        if (draft.overrides && draft.overrides[path]) {
-          unset(draft, ['overrides', path, action.meta.doc]);
+        if (draft.databaseOverrides && draft.databaseOverrides[path]) {
+          unset(draft, ['databaseOverrides', path, action.meta.doc]);
         }
 
         if (draft[key] && draft[key].ordered) {
@@ -346,18 +360,18 @@ export default function cacheReducer(state = {}, action) {
 
       case actionTypes.OPTIMISTIC_ADDED:
       case actionTypes.OPTIMISTIC_MODIFIED:
-        const data = Object.assign(
-          draft.overrides[path][action.meta.doc] || {},
+        setWith(
+          draft,
+          ['databaseOverrides', path, action.meta.doc],
           action.payload.data,
+          Object,
         );
-
-        setWith(draft, ['overrides', path, action.meta.doc], data, Object);
 
         updateCollectionQueries(draft, path);
         return draft;
 
       case actionTypes.OPTIMISTIC_REMOVED:
-        set(draft, ['overrides', path, action.meta.doc], null);
+        set(draft, ['databaseOverrides', path, action.meta.doc], null);
 
         updateCollectionQueries(draft, path);
         return draft;

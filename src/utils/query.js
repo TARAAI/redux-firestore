@@ -96,7 +96,7 @@ function arrayify(cursor) {
  */
 function handleSubcollections(ref, subcollectionList) {
   if (Array.isArray(subcollectionList)) {
-    subcollectionList.forEach(subcollection => {
+    subcollectionList.forEach((subcollection) => {
       /* eslint-disable no-param-reassign */
       if (subcollection.collection) {
         if (typeof ref.collection !== 'function') {
@@ -198,7 +198,7 @@ function arrayToStr(key, value) {
     return `${key}=${value.toString()}`;
   }
 
-  return value.map(val => arrayToStr(key, val));
+  return value.map((val) => arrayToStr(key, val));
 }
 
 /**
@@ -225,8 +225,8 @@ function pickQueryParams(obj) {
  */
 function serialize(queryParams) {
   return Object.keys(queryParams)
-    .filter(key => queryParams[key] !== undefined)
-    .map(key => arrayToStr(key, queryParams[key]))
+    .filter((key) => queryParams[key] !== undefined)
+    .map((key) => arrayToStr(key, queryParams[key]))
     .join('&');
 }
 
@@ -273,7 +273,7 @@ export function getQueryName(meta) {
       'Queries with subcollections must use "storeAs" to prevent invalid store updates. This closley matches the upcoming major release (v1), which stores subcollections at the top level by default.',
     );
     /* eslint-enable no-console */
-    const mappedCollections = subcollections.map(subcollection =>
+    const mappedCollections = subcollections.map((subcollection) =>
       getQueryName(subcollection),
     );
     basePath = `${basePath}/${mappedCollections.join('/')}`;
@@ -318,7 +318,7 @@ export function getBaseQueryName(meta) {
   let basePath = collection || collectionGroup;
 
   if (collection && subcollections) {
-    const mappedCollections = subcollections.map(subcollection =>
+    const mappedCollections = subcollections.map((subcollection) =>
       getQueryName(subcollection),
     );
     basePath = `${basePath}/${mappedCollections.join('/')}`;
@@ -480,15 +480,25 @@ export function getQueryConfigs(queries) {
 export function orderedFromSnap(snap) {
   const ordered = [];
   if (snap.data && snap.exists) {
-    const {id, ref: { collection: { path } } } = snap;
+    const {
+      id,
+      ref: {
+        parent: { path },
+      },
+    } = snap;
     const obj = isObject(snap.data())
       ? { id, path, ...(snap.data() || snap.data) }
       : { id, path, data: snap.data() };
     snapshotCache.set(obj, snap);
     ordered.push(obj);
   } else if (snap.forEach) {
-    snap.forEach(doc => {
-      const {id, ref: { collection: { path } } } = doc;
+    snap.forEach((doc) => {
+      const {
+        id,
+        ref: {
+          parent: { path },
+        },
+      } = doc;
       const obj = isObject(doc.data())
         ? { id, path, ...(doc.data() || doc.data) }
         : { id, path, data: doc.data() };
@@ -513,21 +523,21 @@ export function dataByIdSnapshot(snap) {
     if (snapData) {
       snapshotCache.set(snapData, snap);
       data[snap.id] = {
-        id: snap.id, 
-        path: snap.ref.parent.path, 
-        ...snapData
+        id: snap.id,
+        path: snap.ref.parent.path,
+        ...snapData,
       };
     } else {
       data[snap.id] = null;
     }
   } else if (snap.forEach) {
-    snap.forEach(doc => {
+    snap.forEach((doc) => {
       const snapData = doc.data() || doc;
       snapshotCache.set(snapData, doc);
       data[doc.id] = {
-        id: doc.id, 
-        path: doc.ref.parent.path, 
-        ...snapData
+        id: doc.id,
+        path: doc.ref.parent.path,
+        ...snapData,
       };
     });
   }
@@ -550,7 +560,7 @@ export function dataByIdSnapshot(snap) {
 export function getPopulateChild(firebase, populate, id) {
   return firestoreRef(firebase, { collection: populate.root, doc: id })
     .get()
-    .then(snap => ({ id, ...snap.data() }));
+    .then((snap) => ({ id, ...snap.data() }));
 }
 
 /**
@@ -571,7 +581,7 @@ export function populateList(firebase, originalObj, p, results) {
     map(originalObj, (id, childKey) => {
       // handle list of keys
       const populateKey = id === true || p.populateByKey ? childKey : id;
-      return getPopulateChild(firebase, p, populateKey).then(pc => {
+      return getPopulateChild(firebase, p, populateKey).then((pc) => {
         if (pc) {
           // write child to result object under root name if it is found
           return set(results, `${p.root}.${populateKey}`, pc);
@@ -607,7 +617,7 @@ function getPopulateObjs(arr) {
   if (!Array.isArray(arr)) {
     return arr;
   }
-  return arr.map(o => (isObject(o) ? o : getPopulateObj(o)));
+  return arr.map((o) => (isObject(o) ? o : getPopulateObj(o)));
 }
 
 /**
@@ -636,16 +646,16 @@ export function promisesForPopulate(
       : populatesIn,
   );
 
-  const dataHasPopulateChilds = populatesForData.some(populate =>
+  const dataHasPopulateChilds = populatesForData.some((populate) =>
     has(originalData, populate.child),
   );
   if (dataHasPopulateChilds) {
     // Data is a single object, resolve populates directly
-    populatesForData.forEach(p => {
+    populatesForData.forEach((p) => {
       const childDataVal = get(originalData, p.child);
       if (typeof childDataVal === 'string' || childDataVal instanceof String) {
         return promisesArray.push(
-          getPopulateChild(firebase, p, childDataVal).then(v => {
+          getPopulateChild(firebase, p, childDataVal).then((v) => {
             // write child to result object under root name if it is found
             if (v) {
               set(
@@ -673,7 +683,7 @@ export function promisesForPopulate(
       );
 
       // resolve each populate for this data item
-      forEach(populatesForDataItem, p => {
+      forEach(populatesForDataItem, (p) => {
         // get value of parameter to be populated (key or list of keys)
         const idOrList = get(d, p.child);
 
@@ -687,7 +697,7 @@ export function promisesForPopulate(
         if (typeof idOrList === 'string' || idOrList instanceof String) {
           return promisesArray.push(
             // eslint-disable-line
-            getPopulateChild(firebase, p, idOrList).then(v => {
+            getPopulateChild(firebase, p, idOrList).then((v) => {
               // write child to result object under root name if it is found
               if (v) {
                 set(
@@ -739,7 +749,7 @@ function docChangeEvent(change, originalMeta = {}) {
   }
   const data = {
     id: change.doc.id,
-    path: change.parent.path,
+    path: change.doc.ref.parent.path,
     ...change.doc.data(),
   };
   return {
@@ -780,7 +790,7 @@ export function dispatchListenerResponse({
   if (docChanges && docChanges.length < docData.size) {
     // Loop to dispatch for each change if there are multiple
     // TODO: Option for dispatching multiple changes in single action
-    docChanges.forEach(change => {
+    docChanges.forEach((change) => {
       dispatch(docChangeEvent(change, meta));
     });
   } else {
@@ -817,9 +827,9 @@ export function getPopulateActions({ firebase, docData, meta }) {
     dataByIdSnapshot(docData),
     meta.populates,
   )
-    .then(populateResults =>
+    .then((populateResults) =>
       // Listener results for each child collection
-      Object.keys(populateResults).map(resultKey => ({
+      Object.keys(populateResults).map((resultKey) => ({
         // TODO: Handle population of subcollection queries
         meta: { collection: resultKey },
         payload: {
@@ -830,7 +840,7 @@ export function getPopulateActions({ firebase, docData, meta }) {
         requested: true,
       })),
     )
-    .catch(populateErr => {
+    .catch((populateErr) => {
       console.error('Error with populate:', populateErr, meta); // eslint-disable-line no-console
       return Promise.reject(populateErr);
     });
