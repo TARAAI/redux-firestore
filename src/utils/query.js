@@ -166,6 +166,8 @@ export function firestoreRef(firebase, meta) {
       'Reference cannot contain both Collection and CollectionGroup.',
     );
   }
+  const { globalDataConvertor } =
+    (firebase && firebase._ && firebase._.config) || {};
 
   if (collection) ref = ref.collection(collection);
   if (collectionGroup) ref = ref.collectionGroup(collectionGroup);
@@ -178,6 +180,7 @@ export function firestoreRef(firebase, meta) {
   if (startAfter) ref = ref.startAfter(...arrayify(startAfter));
   if (endAt) ref = ref.endAt(...arrayify(endAt));
   if (endBefore) ref = ref.endBefore(...arrayify(endBefore));
+  if (globalDataConvertor) ref = ref.withConverter(globalDataConvertor);
   return ref;
 }
 
@@ -675,7 +678,7 @@ export function promisesForPopulate(
         if (typeof idOrList === 'string' || idOrList instanceof String) {
           return promisesArray.push(
             // eslint-disable-line
-            getPopulateChild(firebase, p, idOrList).then(v => {
+            getPopulateChild(firebase, p, idOrList).then((v) => {
               // write child to result object under root name if it is found
               if (v) {
                 set(
@@ -725,11 +728,16 @@ function docChangeEvent(change, originalMeta = {}) {
   } else {
     meta.doc = change.doc.id;
   }
+  const data = {
+    id: change.doc.id,
+    path: change.doc.ref.parent.path,
+    ...change.doc.data(),
+  };
   return {
     type: changeTypeToEventType[change.type] || actionTypes.DOCUMENT_MODIFIED,
     meta,
     payload: {
-      data: change.doc.data(),
+      data,
       ordered: { oldIndex: change.oldIndex, newIndex: change.newIndex },
     },
   };
@@ -763,7 +771,7 @@ export function dispatchListenerResponse({
   if (docChanges && docChanges.length < docData.size) {
     // Loop to dispatch for each change if there are multiple
     // TODO: Option for dispatching multiple changes in single action
-    docChanges.forEach(change => {
+    docChanges.forEach((change) => {
       dispatch(docChangeEvent(change, meta));
     });
   } else {
@@ -800,9 +808,9 @@ export function getPopulateActions({ firebase, docData, meta }) {
     dataByIdSnapshot(docData),
     meta.populates,
   )
-    .then(populateResults =>
+    .then((populateResults) =>
       // Listener results for each child collection
-      Object.keys(populateResults).map(resultKey => ({
+      Object.keys(populateResults).map((resultKey) => ({
         // TODO: Handle population of subcollection queries
         meta: { collection: resultKey },
         payload: {
@@ -813,7 +821,7 @@ export function getPopulateActions({ firebase, docData, meta }) {
         requested: true,
       })),
     )
-    .catch(populateErr => {
+    .catch((populateErr) => {
       console.error('Error with populate:', populateErr, meta); // eslint-disable-line no-console
       return Promise.reject(populateErr);
     });
