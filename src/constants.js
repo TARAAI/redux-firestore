@@ -81,6 +81,9 @@ export const actionTypes = {
   TRANSACTION_START: `${actionsPrefix}/TRANSACTION_START`,
   TRANSACTION_SUCCESS: `${actionsPrefix}/TRANSACTION_SUCCESS`,
   TRANSACTION_FAILURE: `${actionsPrefix}/TRANSACTION_FAILURE`,
+  OPTIMISTIC_ADDED: `${actionsPrefix}/OPTIMISTIC_ADDED`,
+  OPTIMISTIC_MODIFIED: `${actionsPrefix}/OPTIMISTIC_MODIFIED`,
+  OPTIMISTIC_REMOVED: `${actionsPrefix}/OPTIMISTIC_REMOVED`,
 };
 
 /**
@@ -124,6 +127,7 @@ export const defaultConfig = {
   mergeOrdered: true,
   mergeOrderedDocUpdates: true,
   mergeOrderedCollectionUpdates: true,
+  globalDataConverter: null,
 };
 
 export const methodsToAddFromFirestore = [
@@ -138,6 +142,7 @@ export const methodsToAddFromFirestore = [
   'ensureClientConfigured',
   'setLogLevel',
   'settings',
+  'mutate',
 ];
 
 export default {

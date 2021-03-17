@@ -186,6 +186,15 @@ export function deleteRef(firebase, dispatch, queryOption) {
  */
 export function setListener(firebase, dispatch, queryOpts, successCb, errorCb) {
   const meta = getQueryConfig(queryOpts);
+  
+  const success = docData => {
+    // Dispatch directly if no populates
+    if (!meta.populates) {
+      dispatchListenerResponse({ dispatch, docData, meta, firebase });
+      // Invoke success callback if it exists
+      if (typeof successCb === 'function') successCb(docData);
+      return;
+    }
 
   // Create listener
   const unsubscribe = firestoreRef(firebase, meta).onSnapshot(
@@ -254,10 +263,45 @@ export function setListener(firebase, dispatch, queryOpts, successCb, errorCb) {
         },
         preserve: preserveOnListenerError,
       });
-      // Invoke error callback if it exists
-      if (typeof errorCb === 'function') errorCb(err);
-    },
-  );
+  }
+
+  const error = err => {
+    const {
+      mergeOrdered,
+      mergeOrderedDocUpdates,
+      mergeOrderedCollectionUpdates,
+      logListenerError,
+      preserveOnListenerError,
+    } = firebase._.config || {};
+    // TODO: Look into whether listener is automatically removed in all cases
+    // Log error handling the case of it not existing
+    if (
+      logListenerError !== false &&
+      !!console &&
+      typeof console.error === 'function' // eslint-disable-line no-console
+    ) {
+      console.error('redux-firestore listener error:', err); // eslint-disable-line no-console
+    }
+    dispatch({
+      type: actionTypes.LISTENER_ERROR,
+      meta,
+      payload: err,
+      merge: {
+        docs: mergeOrdered && mergeOrderedDocUpdates,
+        collections: mergeOrdered && mergeOrderedCollectionUpdates,
+      },
+      preserve: preserveOnListenerError,
+    });
+    // Invoke error callback if it exists
+    if (typeof errorCb === 'function') errorCb(err);
+  }
+
+  const includeMetadataChanges = queryOpts && queryOpts.includeMetadataChanges || false;
+
+  // Create listener
+  const unsubscribe = includeMetadataChanges 
+    ? firestoreRef(firebase, meta).onSnapshot({ includeMetadataChanges },success, error)
+    : firestoreRef(firebase, meta).onSnapshot(success, error) ;
   attachListener(firebase, dispatch, meta, unsubscribe);
 
   return unsubscribe;
