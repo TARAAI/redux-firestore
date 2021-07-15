@@ -456,6 +456,7 @@ function atomize(mutation, cached) {
     return data;
   }, JSON.parse(JSON.stringify(mutation)));
 }
+
 /**
  * Translate mutation to a set of database overrides
  * @param {MutateAction} action - Standard Redux action
@@ -475,7 +476,14 @@ function translateMutationToOverrides({ payload }, db) {
   let reader = {};
   if (reads) {
     reader = Object.keys(reads).reduce((result, key) => {
-      const { collection, doc } = result[key];
+      const read = result[key];
+      if (typeof read === 'function') {
+        return {
+          ...result,
+          [key]: read(),
+        };
+      }
+      const { collection, doc } = read;
       if (!doc) {
         throw new Error("Firestore Transactions don't support query lookups.");
       }

@@ -45,6 +45,14 @@ function isDocRead(read) {
 }
 
 /**
+ * @param {Mutation_v1 | Mutation_v2} read
+ * @returns Boolean
+ */
+ function isProviderRead(read) {
+  return typeof read === 'function';
+}
+
+/**
  * @param {Mutation_v1 | Mutation_v2} operations
  * @returns Boolean
  */
@@ -204,6 +212,8 @@ async function writeInTransaction(firebase, operations) {
         const snapshot = await getter(doc);
         return serialize(snapshot.exsits === false ? null : snapshot);
       }
+      
+      if (isProviderRead(read)) return read();
 
       // NOTE: Queries are not supported in Firestore Transactions (client-side)
       const coll = firestoreRef(firebase, read);
